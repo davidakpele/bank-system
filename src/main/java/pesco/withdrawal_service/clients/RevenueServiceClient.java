@@ -33,13 +33,15 @@ public class RevenueServiceClient {
 
     public CompletableFuture<String> addToPlatformRevenue(BigDecimal feeAmount, CurrencyType currencyType, String token) {
         Map<String, Object> message = Map.of(
-                "type", "add-deduction",
+                "type", "add_revenue",
                 "amount", feeAmount,
                 "currencyType", currencyType,
-                "token", token); 
+                "token", token);
+        System.out.println(message);
         return sendMessageToRevenueService(message, token);
     }
 
+    @SuppressWarnings("removal")
     private CompletableFuture<String> sendMessageToRevenueService(Map<String, Object> message, String token) {
         String url = revenueSocketUrl + "?token=" + token;
         System.out.println(url);
@@ -72,7 +74,6 @@ public class RevenueServiceClient {
             }, url);
 
         } catch (Exception e) {
-            System.out.println("❌ Exception while sending WebSocket message: " + e.getMessage());
             responseFuture.completeExceptionally(e);
         }
 

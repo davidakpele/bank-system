@@ -53,7 +53,7 @@ public class UserServiceClient {
 
     public UserDTO authenticateUser(String username, String token) {
         return this.authServiceWebClient.get()
-                .uri("/api/v1/user/by/username/{username}", username)
+                .uri("/api/v1/user/username/{username}", username)
                 .headers(headers -> headers.setBearerAuth(token))
                 .retrieve()
                 .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
@@ -86,13 +86,20 @@ public class UserServiceClient {
                 .block();
     }
 
-    private String extractDetailsFromError(String errorMessage) {
+    private String extractDetailsFromError(String errorBody) {
         try {
-            ObjectMapper objectMapper = new ObjectMapper();
-            JsonNode rootNode = objectMapper.readTree(errorMessage);
-            return rootNode.path("message").asText();
-        } catch (JsonProcessingException e) {
-            return "No details available";
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode node = mapper.readTree(errorBody);
+    
+            if (node.has("details")) {
+                return node.get("details").asText();
+            } else if (node.has("message")) {
+                return node.get("message").asText();
+            } else {
+                return "Unknown error occurred";
+            }
+        } catch (Exception e) {
+            return "Failed to parse error details";
         }
     }
 
@@ -171,4 +178,21 @@ public class UserServiceClient {
         .block();
     }
 
+    public UserDTO findByUsername(String username, String token) {
+        return this.authServiceWebClient.get()
+                .uri("/api/v1/user/username/{username}", username)
+                .headers(headers -> headers.setBearerAuth(token))
+                .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        clientResponse -> clientResponse.bodyToMono(String.class)
+                                .flatMap(errorMessage -> {
+                                    if (clientResponse.statusCode().is4xxClientError()) {
+                                        String details = extractDetailsFromError(errorMessage);
+                                        return Mono.error(new UserClientNotFoundException("User not found", details));
+                                    }
+                                    return Mono.error(new RuntimeException("Server error"));
+                                }))
+                .bodyToMono(UserDTO.class)
+                .block();
+    }
 }

@@ -28,7 +28,7 @@ public class WalletServiceClient {
     @SuppressWarnings("unused")
     private final ApplicationSettings settings;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
+ 
     private String walletSocketUrl;
 
     @Autowired
@@ -87,12 +87,13 @@ public class WalletServiceClient {
     }
 
     public CompletableFuture<String> DeductAmountFromSenderWallet(Long id, String username, String recipientUser,
-            String finalDeduction, CurrencyType currencyType, Long walletId, String token) {
+    String amount, String finalDeduction, CurrencyType currencyType, Long walletId, String token) {
         Map<String, Object> message = Map.of(
                 "type", "wallet-deduction",
                 "senderUser", username,
                 "recipientUser", recipientUser,
-                "amount", finalDeduction,
+                "finalDeduction", finalDeduction,
+                "amount", amount,  
                 "currencyType", currencyType,
                 "userId", id,
                 "username", username,
@@ -112,6 +113,7 @@ public class WalletServiceClient {
         return sendMessageToWalletService(message, senderId, token);
     }
 
+    @SuppressWarnings("removal")
     private CompletableFuture<String> sendMessageToWalletService(Map<String, Object> message, Long senderId,
             String token) {
         String url = walletSocketUrl + "?userId=" + senderId + "&token=" + token;
@@ -134,9 +136,7 @@ public class WalletServiceClient {
 
                 @Override
                 protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-                    // Complete the future with response and close the session
                     responseFuture.complete(message.getPayload());
-
                 }
 
                 @Override
