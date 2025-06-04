@@ -1,13 +1,15 @@
 package pesco.wallet_service.clients;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+import pesco.wallet_service.bootstrap.UsersDetailsDTO;
 import pesco.wallet_service.dtos.UserDTO;
 import pesco.wallet_service.enums.BannedReasons;
 import pesco.wallet_service.exceptions.UserClientNotFoundException;
@@ -17,10 +19,9 @@ import reactor.core.publisher.Mono;
 public class UserServiceClient {
 
     private final WebClient webClient;
-
     @Autowired
-    public UserServiceClient(WebClient.Builder webClientBuilder, @Value("${auth-service.base-url}") String baseUrl) {
-        this.webClient = webClientBuilder.baseUrl(baseUrl).build();
+    public UserServiceClient(@Qualifier("authServiceWebClient") WebClient webClient) {
+        this.webClient = webClient;
     }
 
     public UserDTO getUserById(Long id, String token) {
@@ -47,24 +48,6 @@ public class UserServiceClient {
                 .switchIfEmpty(Mono.error(new UserClientNotFoundException("User not found: No data returned", token)))
                 .block();
 
-    }
-
-    public UserDTO getUserByUsername(String username, String token) {
-        return this.webClient.get()
-                .uri("/api/v1/user/by/username/{username}", username)
-                .headers(headers -> headers.setBearerAuth(token))
-                .retrieve()
-                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
-                        clientResponse -> clientResponse.bodyToMono(String.class)
-                                .flatMap(errorMessage -> {
-                                    if (clientResponse.statusCode().is4xxClientError()) {
-                                        String details = extractDetailsFromError(errorMessage);
-                                        return Mono.error(new UserClientNotFoundException("User not found", details));
-                                    }
-                                    return Mono.error(new RuntimeException("Server error"));
-                                }))
-                .bodyToMono(UserDTO.class)
-                .block();
     }
 
     public UserDTO findUserByUsernameInPublicRoute(String username) {
@@ -173,6 +156,65 @@ public class UserServiceClient {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+
+    public UserDTO findById(Long userId, String token) {
+        String endpoint = "/api/v1/user/" + userId;
+
+        return this.webClient.get()
+                .uri(endpoint)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        clientResponse -> clientResponse.bodyToMono(String.class)
+                                .flatMap(errorMessage -> {
+                                    if (clientResponse.statusCode().is4xxClientError()) {
+                                        String details = extractDetailsFromError(errorMessage);
+                                        return Mono.error(new UserClientNotFoundException("User not found", details));
+                                    }
+                                    return Mono.error(new RuntimeException("Server error"));
+                                }))
+                .bodyToMono(UserDTO.class)
+                .block();
+    }
+
+    public UserDTO findByUsername(String username, String token) {
+        String endpoint = "/api/v1/user/username/" + username;
+
+        return this.webClient.get()
+                .uri(endpoint)
+                .headers(headers -> headers.setBearerAuth(token))
+                .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        clientResponse -> clientResponse.bodyToMono(String.class)
+                                .flatMap(errorMessage -> {
+                                    if (clientResponse.statusCode().is4xxClientError()) {
+                                        String details = extractDetailsFromError(errorMessage);
+                                        return Mono.error(new UserClientNotFoundException("User not found", details));
+                                    }
+                                    return Mono.error(new RuntimeException("Server error"));
+                                }))
+                .bodyToMono(UserDTO.class)
+                .block();
+    }
+
+    public UsersDetailsDTO getUserByUsername(String username, String token) {
+        return this.webClient.get()
+                .uri("/api/v1/user/username/{username}", username)
+                .headers(headers -> headers.setBearerAuth(token))
+                .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        clientResponse -> clientResponse.bodyToMono(String.class)
+                                .flatMap(errorMessage -> {
+                                    if (clientResponse.statusCode().is4xxClientError()) {
+                                        String details = extractDetailsFromError(errorMessage);
+                                        return Mono.error(new UserClientNotFoundException("User not found", details));
+                                    }
+                                    return Mono.error(new RuntimeException("Server error"));
+                                }))
+                .bodyToMono(UsersDetailsDTO.class)
+                .block();
     }
 
 }

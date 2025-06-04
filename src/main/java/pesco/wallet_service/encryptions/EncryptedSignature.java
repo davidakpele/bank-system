@@ -1,4 +1,4 @@
-package pesco.wallet_service.payloads;
+package pesco.wallet_service.encryptions;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class CreateWalletRequest {
-    private Long userId;
+public class EncryptedSignature {
+    private String iv;
+    private String encryptedData;
 }

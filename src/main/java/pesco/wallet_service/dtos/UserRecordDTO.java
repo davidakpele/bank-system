@@ -19,16 +19,15 @@ public class UserRecordDTO {
     private String gender;
     private String country;
     private String city;
-    private boolean isTransferPin;
+    private boolean transferPinSet;
     private boolean locked;
     private LocalDateTime lockedAt;
     private String referralCode;
-    private boolean isBlocked;
+    private boolean blocked;
     private Long blockedDuration;
     private String blockedUntil;
     private String blockedReason;
-    private String totalRefs;
-    private String notifications;
+    private String totalReferers;
     private String referralLink;
     private String photo;
 }

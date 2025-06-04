@@ -1,6 +1,7 @@
 package pesco.wallet_service.configuration;
 
 import lombok.RequiredArgsConstructor;
+import pesco.wallet_service.bootstrap.UsersDetailsDTO;
 import pesco.wallet_service.clients.UserServiceClient;
 import pesco.wallet_service.dtos.UserDTO;
 import pesco.wallet_service.dtos.UserRecordDTO;
@@ -32,7 +33,7 @@ public class ApplicationConfiguration {
         return username -> {
             try {
                 String token = tokenExtractor.extractToken(request);
-                UserDTO userDTO = userServiceClient.getUserByUsername(username, token);
+                UsersDetailsDTO userDTO = userServiceClient.getUserByUsername(username, token);
 
                 if (userDTO != null) {
                     // Map user roles if necessary, here defaulting to ROLE_USER
@@ -59,7 +60,7 @@ public class ApplicationConfiguration {
     }
 
     // Helper method to determine if the account is locked
-    private boolean isAccountLocked(UserDTO userDTO) {
+    private boolean isAccountLocked(UsersDetailsDTO userDTO) {
         return userDTO.getRecords().stream().anyMatch(UserRecordDTO::isLocked);
     }
 

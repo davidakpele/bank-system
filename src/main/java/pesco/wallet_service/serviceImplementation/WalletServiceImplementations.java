@@ -13,14 +13,19 @@ import java.util.stream.Collectors;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import pesco.wallet_service.clients.HistoryClient;
 import pesco.wallet_service.clients.UserServiceClient;
 import pesco.wallet_service.dtos.UserDTO;
+import pesco.wallet_service.dtos.WalletBalanceDTO;
+import pesco.wallet_service.dtos.WalletSection;
 import pesco.wallet_service.enums.CurrencyType;
 import pesco.wallet_service.models.CurrencyBalance;
 import pesco.wallet_service.models.Wallet;
@@ -53,7 +58,7 @@ public class WalletServiceImplementations implements WalletService {
     public ResponseEntity<?> CreateUserTransferPin(TransactionRequest request, String token,
             Authentication authentication) {
         String requestUsername = authentication.getName();
-        UserDTO user = userServiceClient.getUserByUsername(requestUsername, token);
+        UserDTO user = userServiceClient.findByUsername(requestUsername, token);
 
         Optional<Wallet> wallet = walletRepository.findByUserId(user.getId());
 
@@ -107,7 +112,7 @@ public class WalletServiceImplementations implements WalletService {
     @Override
     public ResponseEntity<?> GetBalance(String username, String token) {
         // Fetch user details
-        UserDTO user = userServiceClient.getUserByUsername(username, token);
+        UserDTO user = userServiceClient.findByUsername(username, token);
 
         // Fetch main wallet balance
         Optional<Wallet> walletOptional = walletRepository.findByUserId(user.getId());
@@ -146,7 +151,6 @@ public class WalletServiceImplementations implements WalletService {
             //response.put("central_balance", formattedBalance);
             response.put("transaction_history_count", transactionHistoryLabel);
             response.put("wallet_balances", balanceDetails);
-            response.put("user_authentication_details", user.getRecords().get(0).isTransferPin());
                     
             return new ResponseEntity<>(response, HttpStatus.OK);
         }
@@ -225,6 +229,7 @@ public class WalletServiceImplementations implements WalletService {
 
     @Override
     public ResponseEntity<?> createWallet(CreateWalletRequest request) {
+        Map<String, String> response = new HashMap<>();
         try {
             // Create and initialize the wallet
             Wallet wallet = new Wallet();
@@ -234,13 +239,12 @@ public class WalletServiceImplementations implements WalletService {
 
             // Save the wallet
             walletRepository.save(wallet);
-
-            // Return success response
-            return ResponseEntity.ok("Wallet Successfully Created!");
+            response.put("message", "Wallet created successfully");
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(response);
         } catch (Exception e) {
             // Handle exceptions and return an error response
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Failed to create wallet: " + e.getMessage());
+            response.put("Failed to create wallet: " + e.getMessage(), "Wallet created successfully");
+            return ResponseEntity.internalServerError().contentType(MediaType.APPLICATION_JSON).body(response);
         }
     }
 
@@ -384,5 +388,38 @@ public class WalletServiceImplementations implements WalletService {
         return ResponseEntity.ok(wallet);
     }
 
-    
+    @Transactional
+    public WalletSection buildWalletSection(UserDTO user, String token) {
+        Optional<Wallet> walletOptional = walletRepository.findByUserId(user.getId());
+
+        if (walletOptional.isEmpty()) {
+            return WalletSection.builder()
+                    .wallet_balances(List.of())
+                    .walletId(null)
+                    .build();
+        }
+
+        Wallet wallet = walletOptional.get();
+
+        List<WalletBalanceDTO> balances = wallet.getBalances().stream()
+                .map(balance -> WalletBalanceDTO.builder()
+                        .currency_code(balance.getCurrencyCode())
+                        .symbol(balance.getCurrencySymbol())
+                        .balance(FormatBigDecimal(balance.getBalance()))
+                        .build())
+                .collect(Collectors.toList());
+
+        Long transactionCount = historyClient.getTransactionCount(user.getId(), token);
+        String historyLabel = transactionCount > 1 ? transactionCount + " times"
+                : transactionCount == 0 ? "No history" : "once";
+
+        boolean hasPin = user.getRecords().get(0).isTransferPinSet();
+
+        return WalletSection.builder()
+                .wallet_balances(balances)
+                .walletId(wallet.getId())
+                .build();
+    }
+
+
 }
