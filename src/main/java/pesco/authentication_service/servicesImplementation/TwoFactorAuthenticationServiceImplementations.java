@@ -129,7 +129,7 @@ public class TwoFactorAuthenticationServiceImplementations implements TwoFactorA
                         .orElseThrow(() -> new AuthenticationServiceException("User not found"));
 
                 // Generate JWT token
-                var jwtToken = jwtService.generateToken((UserDetails) userjwtInfo);
+                var jwtToken = jwtService.generateToken((UserDetails) userjwtInfo, userInfo.get().getId());
 
                 response.put("jwt", jwtToken);
                 response.put("userId", userInfo.get().getId());

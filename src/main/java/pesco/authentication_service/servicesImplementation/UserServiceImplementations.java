@@ -21,7 +21,6 @@ import pesco.authentication_service.repositories.UserRecordRepository;
 import pesco.authentication_service.repositories.UsersRepository;
 import pesco.authentication_service.services.PasswordResetTokenService;
 import pesco.authentication_service.services.UserService;
-import pesco.authentication_service.utils.CustomerServiceEmailProperty;
 import pesco.authentication_service.utils.KeyWrapper;
 
 @Service
@@ -33,7 +32,6 @@ public class UserServiceImplementations implements UserService {
     private final UsersRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetTokenService passwordResetTokenService;;
-    private final CustomerServiceEmailProperty customerServiceEmailProperty;
     private final KeyWrapper keysWrapper;
     private final UserRecordRepository userRecordRepository;
 
@@ -93,9 +91,8 @@ public class UserServiceImplementations implements UserService {
             String url = keysWrapper.getUrl() + "/auth/reset-password?token=" + token;
             String content = "We received a request to reset the password for your account associated with this email address. If you did not request this change, please ignore this email."
                     + "To reset your password, please click on the link below:";
-            String customerEmail = customerServiceEmailProperty.getEmail();
-
-            CompletableFuture<Void>sendResetPasswordMessage = CompletableFuture.runAsync(() -> notificationServiceClient.sendPasswordResetMessage(user.get().getEmail(), user.get().getUsername(), content, url,customerEmail));
+       
+            CompletableFuture<Void>sendResetPasswordMessage = CompletableFuture.runAsync(() -> notificationServiceClient.sendPasswordResetMessage(user.get().getEmail(), user.get().getUsername(), content, url));
             sendResetPasswordMessage.join();
         
             response.put("message",

@@ -12,7 +12,7 @@ public interface JwtService {
 
     Claims extractAllClaims(String token);
 
-    String generateToken(UserDetails userDetails);
+    String generateToken(UserDetails userDetails, Long userId);
 
     String generateToken(Map<String, Object> claims, UserDetails userDetails);
 

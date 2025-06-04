@@ -16,6 +16,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pesco.authentication_service.exceptions.Error;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -63,9 +64,8 @@ public class AuthenticationServiceImplementations implements AuthenticationServi
     private final WalletServiceClient walletServiceClient;
 
     @Transactional
-    public ResponseEntity<String> createAccount(UserSignUpRequest request) {
+    public ResponseEntity<?> createAccount(UserSignUpRequest request) {
         Long nextUserId = getNextUserId();
-
         Users user = Users.builder()
             .id(nextUserId)
             .email(request.getEmail())
@@ -124,7 +124,7 @@ public class AuthenticationServiceImplementations implements AuthenticationServi
         sendVerificationMessage.join();
 
         String message = "Thanks for your interest in joining Artex network! To complete account verification, email has been sent to email address you provided.";
-        return new ResponseEntity<>(message, HttpStatus.CREATED);
+        return Error.createResponse("success", HttpStatus.CREATED, message);
     }
 
     @Override
@@ -156,7 +156,7 @@ public class AuthenticationServiceImplementations implements AuthenticationServi
                         }
                     }
 
-                    String jwtToken = jwtService.generateToken(userInfo.get());
+                    String jwtToken = jwtService.generateToken(userInfo.get(), userInfo.get().getId());
                     boolean isTwoFactorAuthEnabled = userInfo.get().isTwoFactorAuth();
 
                     if (isTwoFactorAuthEnabled) {
@@ -375,6 +375,7 @@ public class AuthenticationServiceImplementations implements AuthenticationServi
         }
     }
 
+    
     private Long getNextUserId() {
         List<Users> existingUsers = userRepository.findAll();
         Users newUser = new Users();

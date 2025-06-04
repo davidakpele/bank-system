@@ -49,13 +49,21 @@ public class JwtServiceImplementations implements JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(UserDetails userDetails) {
+    public String generateToken(UserDetails userDetails, Long userId) {
         Map<String, Object> claims = new HashMap<>();
         List<String> roles = userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
         claims.put("roles", roles);
-        return generateToken(claims, userDetails);
+        claims.put("userId", userId);
+        return Jwts.builder()
+                .setHeaderParam("typ", "JWT")
+                .setClaims(claims)
+                .setSubject(userDetails.getUsername())
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 30))
+                .signWith(getSigninKey(), SignatureAlgorithm.HS256)
+                .compact();
     }
 
     public String generateToken(Map<String, Object> claims, UserDetails userDetails) {

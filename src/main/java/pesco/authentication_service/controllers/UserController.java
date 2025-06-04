@@ -62,19 +62,21 @@ public class UserController {
     }
 
     @PreAuthorize("hasRole('USER')")
-    @GetMapping("/by/username/{username}")
-    public ResponseEntity<?> getUserByUsername(@PathVariable String username, HttpServletResponse response,
-            Authentication authentication) {
+    @GetMapping("/username/{username}")
+    public ResponseEntity<?> getUserByUsername(@PathVariable String username, Authentication authentication) {
         if (username == null || username.isEmpty()) {
-            return Error.createResponse("Username is require.*", HttpStatus.BAD_REQUEST, "Username is require.*");
-        } else if (userServices.getUserByUsername(username) == null) {
+            return Error.createResponse("Username is required.", HttpStatus.BAD_REQUEST, "Username is required.");
+        }
+
+        UserDTO userDTO = userRecordService.getUserByUsername(username);
+
+        if (userDTO == null) {
             return Error.createResponse("User with username " + username + " does not exist.", HttpStatus.BAD_REQUEST,
                     "User does not exist");
         }
-        UserDTO userDTO = userRecordService.getUserByUsername(username, authentication);
 
         return ResponseEntity.ok(userDTO);
-    }
+    }    
 
     @PreAuthorize("hasRole('USER')")
     @GetMapping("/my-referral/{id}")
@@ -275,6 +277,21 @@ public class UserController {
         }
 
         return userRecordService.blockUserAccount(userId);
+    }
+
+    @PreAuthorize("hasRole('USER')")
+    @GetMapping("/{id}")
+    public ResponseEntity<?> findById(@PathVariable Long id, HttpServletResponse response,
+            Authentication authentication) {
+        if (id == null || id <= 0) {
+            return Error.createResponse("Invalid request sent.", HttpStatus.BAD_REQUEST, "User Id is missing");
+        } else if (userServices.getUserById(id) == null) {
+            return Error.createResponse("User with ID " + id + " does not exist.", HttpStatus.BAD_REQUEST,
+                    "User does not exist");
+        }
+        UserDTO userDTO = userRecordService.getUserDetailsById(id, authentication);
+
+        return ResponseEntity.ok(userDTO);
     }
 
 

@@ -11,7 +11,7 @@ public interface UserRecordService {
 
     UserDTO getUserDetailsById(Long id, Authentication authentication);
 
-    UserDTO getUserByUsername(String username, Authentication authentication);
+    UserDTO getUserByUsername(String username);
 
     UserDTO findPublicUserByUsername(String username);
 

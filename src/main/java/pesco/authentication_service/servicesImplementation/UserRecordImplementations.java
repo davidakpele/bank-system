@@ -36,17 +36,20 @@ public class UserRecordImplementations implements UserRecordService {
     }
 
     @Override
-    public UserDTO getUserByUsername(String username, Authentication authentication) {
-        Optional<Users> GetUser = userRepository.findByUsername(username);
-        // Get the username from authentication
-        String NewUsername = authentication.getName();
-        if (GetUser.isPresent() && NewUsername.equals(GetUser.get().getUsername())) {
-            Users user = userRepository.findUserWithRecordById(GetUser.get().getId());
-            return UserDTO.fromEntity(user);
+    public UserDTO getUserByUsername(String username) {
+        Optional<Users> getUser = userRepository.findByUsername(username);
+
+        if (getUser.isEmpty()) {
+            return null;
         }
 
-        return null;
-    }
+        Users user = userRepository.findUserWithRecordById(getUser.get().getId());
+        if (user == null) {
+            return null;
+        }
+
+        return UserDTO.fromEntity(user);
+    }    
 
     @Override
     public Optional<UserRecord> getUserReferralCode(Long id) {
