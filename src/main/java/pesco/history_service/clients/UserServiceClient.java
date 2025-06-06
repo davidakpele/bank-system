@@ -51,7 +51,7 @@ public class UserServiceClient {
 
     public UserDTO getUserByUsername(String username, String token) {
         return this.webClient.get()
-                .uri("/api/v1/user/by/username/{username}", username)
+                .uri("/api/v1/user/username/{username}", username)
                 .headers(headers -> headers.setBearerAuth(token))
                 .retrieve()
                 .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
