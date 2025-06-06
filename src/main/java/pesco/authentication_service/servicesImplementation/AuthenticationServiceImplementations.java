@@ -3,11 +3,11 @@ package pesco.authentication_service.servicesImplementation;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.List; 
 import java.util.Map;
 import java.util.Optional; 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -48,6 +48,8 @@ import pesco.authentication_service.utils.KeyWrapper;
 @RequiredArgsConstructor
 public class AuthenticationServiceImplementations implements AuthenticationService {
 
+    private static final String REDIS_LAST_USER_ID_KEY = "auth:system_user:last_id";
+    private final RedisTemplate<String, String> redisTemplate;
     private static final int EXPIRATION_MINUTES = 10;
     private Date expirationTime;
     private final UsersRepository userRepository;
@@ -375,22 +377,30 @@ public class AuthenticationServiceImplementations implements AuthenticationServi
         }
     }
 
-    
-    private Long getNextUserId() {
-        List<Users> existingUsers = userRepository.findAll();
-        Users newUser = new Users();
-        if (existingUsers.isEmpty()) {
-            newUser.setId(1001L);
-        } else {
-            // Find the maximum existing user ID
-            Long maxId = existingUsers.stream()
-                    .map(Users::getId)
-                    .max(Long::compare)
-                    .orElse(0L);
-            // Set the new user ID
-            newUser.setId(maxId + 1);
+    public Long getNextUserId() {
+        // Step 1: Try to get last_id from Redis
+        String redisValue = redisTemplate.opsForValue().get(REDIS_LAST_USER_ID_KEY);
+
+        if (redisValue != null) {
+            Long lastId = Long.parseLong(redisValue);
+            Long nextId = lastId + 1;
+
+            // Step 2: Update Redis with new last_id
+            redisTemplate.opsForValue().set(REDIS_LAST_USER_ID_KEY, nextId.toString());
+            return nextId;
         }
-        return newUser.getId();
+
+        // Step 3: Fallback – query DB to find max ID
+        Long maxId = userRepository.findAll().stream()
+                .map(Users::getId)
+                .max(Long::compare)
+                .orElse(1000L); 
+
+        Long newId = maxId + 1;
+
+        // Step 4: Store new ID in Redis
+        redisTemplate.opsForValue().set(REDIS_LAST_USER_ID_KEY, newId.toString());
+        return newId;
     }
 
     
