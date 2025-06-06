@@ -8,18 +8,24 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
 import pesco.revenue_service.enums.CurrencyType;
+import pesco.revenue_service.enums.TransactionType;
 import pesco.revenue_service.model.CurrencyBalance;
 import pesco.revenue_service.model.Revenue;
+import pesco.revenue_service.model.RevenueTransaction;
 import pesco.revenue_service.repository.RevenueRepository;
+import pesco.revenue_service.repository.RevenueTransactionRepository;
 import pesco.revenue_service.services.RevenueService;
 
 @Service
 public class RevenueServiceImplementations implements RevenueService {
 
     private final RevenueRepository revenueRepository;
+    private final RevenueTransactionRepository transactionRepository;
+    
     @Autowired
-    public RevenueServiceImplementations(RevenueRepository revenueRepository) {
+    public RevenueServiceImplementations(RevenueRepository revenueRepository, RevenueTransactionRepository transactionRepository) {
         this.revenueRepository = revenueRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     @Transactional
@@ -55,7 +61,7 @@ public class RevenueServiceImplementations implements RevenueService {
             balances.add(newBalance);
         }
 
-       // logTransaction(revenue, currencyType, amount, TransactionType.CREDITED);
+       logTransaction(revenue, currencyType, amount, TransactionType.CREDITED);
 
         return revenueRepository.save(revenue); 
     }
@@ -91,4 +97,13 @@ public class RevenueServiceImplementations implements RevenueService {
         }
     }
 
+
+    private void logTransaction(Revenue revenue, CurrencyType currencyType, BigDecimal amount, TransactionType type) {
+        RevenueTransaction transaction = new RevenueTransaction();
+        transaction.setRevenue(revenue);
+        transaction.setTransactionType(type);
+        transaction.setAmount(amount);
+        transaction.setWallet(currencyType);
+        transactionRepository.save(transaction);
+    }
 }

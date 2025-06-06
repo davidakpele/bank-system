@@ -5,17 +5,30 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Component;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.springframework.web.socket.handler.AbstractWebSocketHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import pesco.revenue_service.bootstrap.RevenueBalanceDTO;
+import pesco.revenue_service.bootstrap.RevenueDataSection;
+import pesco.revenue_service.bootstrap.RevenueHistorySection;
+import pesco.revenue_service.bootstrap.RevenueSessionData;
+import pesco.revenue_service.bootstrap.RevenueWalletSection;
+import pesco.revenue_service.clients.AdminServiceClient;
+import pesco.revenue_service.clients.MessageServiceLient;
+import pesco.revenue_service.dto.AdminUserDetailDTO;
+import pesco.revenue_service.dto.MessageDTO;
 import pesco.revenue_service.dto.RevenueDTO;
 import pesco.revenue_service.exceptions.RevenueNotFoundException;
 import pesco.revenue_service.model.Revenue;
 import pesco.revenue_service.repository.RevenueRepository;
+import pesco.revenue_service.services.HistoryService;
 import pesco.revenue_service.services.RevenueService;
 import pesco.revenue_service.utils.JwtTokenProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -33,9 +46,17 @@ public class RevenueBroker extends AbstractWebSocketHandler {
     @Autowired
     private RevenueRepository revenueRepository;
 
+    @Autowired
+    private HistoryService historyService;
 
     @Autowired
     private RevenueService revenueService;
+
+    @Autowired
+    private AdminServiceClient adminServiceClient;
+
+    @Autowired
+    private MessageServiceLient messageServiceClient;
 
     private final Map<String, WebSocketSession> adminSessions = new ConcurrentHashMap<>();
     private final Map<String, WebSocketSession> userSessions = new ConcurrentHashMap<>();
@@ -99,15 +120,14 @@ public class RevenueBroker extends AbstractWebSocketHandler {
             
             if (type.equals("add_revenue")) {
                 try {
-                    // CreateRevenue request = new CreateRevenue(amount, currencyType);
                     Revenue revenue = revenueService.addRevenue(payload);
-
-                    // Lazy collections are now initialized because we are inside a transaction
-                    responseMessageObject.put("status", "success");
-                    responseMessageObject.put("type", "revenue_updated");
-                    responseMessageObject.put("message", "Revenue wallet updated successfully.");
-                    sendMessage(session, responseMessageObject);
-
+                    if (revenue != null) {
+                        // Lazy collections are now initialized because we are inside a transaction
+                        responseMessageObject.put("status", "success");
+                        responseMessageObject.put("type", "revenue_updated");
+                        responseMessageObject.put("message", "Revenue wallet updated successfully.");
+                        sendMessage(session, responseMessageObject);
+                    }
                 } catch (IllegalArgumentException e) {
                     responseMessageObject.put("status", "error");
                     responseMessageObject.put("type", "invalid_currency");
@@ -167,9 +187,7 @@ public class RevenueBroker extends AbstractWebSocketHandler {
             sendErrorAndClose(session, "INVALID_TOKEN", "Invalid or expired token", "Invalid or expired token");
             return;
         }
-
         String extractedUserId = jwtTokenProvider.getUserIdFromJWT(token);
-
         if (!String.valueOf(userId).equals(String.valueOf(extractedUserId))) {
             sendErrorAndClose(session, "AUTH_REQUIRED", "Unauthorized", "User ID mismatch");
             return;
@@ -198,12 +216,58 @@ public class RevenueBroker extends AbstractWebSocketHandler {
         // Check admin role
         String role = jwtTokenProvider.getRoleFromJWT(token);
         if (!"ADMIN".equals(role) || !"SUPER_ADMIN".equals(role) || !"SUPER_USER".equals(role)) {
-            sendErrorAndClose(session, "ADMIN_REQUIRED","Forbidden", "Admin role required");
+            sendErrorAndClose(session, "ADMIN_REQUIRED", "Forbidden", "Admin role required");
             return;
         }
 
-        // Add to admin sessions
-        adminSessions.put(session.getId(), session);
+        AdminUserDetailDTO adminDetails = adminServiceClient.findById(userId);
+        RevenueHistorySection historySection = historyService.buildUserHistory(); 
+        Map<String, MessageDTO> messageMap = messageServiceClient.getAllMessagesForAdmin(userId); 
+
+        // Build wallet section
+        Revenue revenue = revenueRepository.findFirstByOrderByIdAsc().orElseThrow();
+
+        List<RevenueBalanceDTO> balances = revenue.getBalances().stream()
+            .map(balance -> RevenueBalanceDTO.builder()
+                .currency_code(balance.getCurrencyCode())
+                .symbol(balance.getCurrencySymbol())
+                .balance(balance.getBalance().toPlainString())
+                .build())
+            .toList();
+
+        String currencyDisplay = balances.stream()
+            .map(RevenueBalanceDTO::getCurrency_code)
+            .distinct()
+            .sorted()
+            .collect(Collectors.joining(", "));
+
+        RevenueWalletSection wallet = RevenueWalletSection.builder()
+            .revenueId(revenue.getId())
+            .revenue_balances(balances)
+            .currencyDisplay(currencyDisplay)
+            .build();
+
+        if (adminDetails !=null) {
+            RevenueSessionData sessionData = RevenueSessionData.builder()
+                .data(RevenueDataSection.builder()
+                    .session_date(Instant.now().toString())
+                    .sessionId(UUID.randomUUID().toString())
+                    .adminDetails(adminDetails)
+                    .build())
+                .wallet(wallet)
+                .history(historySection)
+                .messages(messageMap)
+                .build();
+
+            String redisKey = "revenue_to_admin:" + userId;
+            String json = objectMapper.writeValueAsString(sessionData);
+            redisTemplate.opsForValue().set(redisKey, json);
+
+            // Add to admin sessions
+            adminSessions.put(session.getId(), session);
+        } else {
+            userSessions.remove(session.getId());
+        }
     }
 
     private void sendMessage(WebSocketSession session, Object message) throws IOException {
