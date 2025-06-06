@@ -1,5 +1,8 @@
 package pesco.notification_service.controller;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,39 +63,83 @@ public class MessageController {
         }
     }
 
-    // wallet alert
+
     @PostMapping("/send/credit-wallet-message")
-    public ResponseEntity<?> sendCreditWalletAlert(HttpServletRequest httpRequest,
+    public ResponseEntity<Map<String, Object>> sendCreditWalletAlert(
+            HttpServletRequest httpRequest,
             @Valid @RequestBody CreditWalletNotification request) {
         try {
-            walletMessageProducer.sendCreditWalletNotification(request.getRecipientEmail(), request.getTransferAmount(), request.getSenderFullName(), request.getReceiverFullName(), request.getRecipientTotalBalance(), request.getCurrency());
-            return ResponseEntity.ok().body("Credit message successfully sent.!");
+            walletMessageProducer.sendCreditWalletNotification(
+                    request.getRecipientEmail(),
+                    request.getTransferAmount(),
+                    request.getSenderFullName(),
+                    request.getReceiverFullName(),
+                    request.getRecipientTotalBalance(),
+                    request.getCurrency());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("message", "Credit message successfully sent!");
+
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Failed to send Credit message.");
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "error");
+            error.put("message", "Failed to send credit message.");
+            return ResponseEntity.internalServerError().body(error);
         }
     }
 
     @PostMapping("/send/deposit-wallet-message")
-    public ResponseEntity<?> sendDepositWalletAlert(HttpServletRequest httpRequest,
+    public ResponseEntity<Map<String, Object>> sendDepositWalletAlert(
+            HttpServletRequest httpRequest,
             @Valid @RequestBody DepositWalletNotification request) {
         try {
-            walletMessageProducer.sendDepositWalletNotification(request.getRecipientEmail(), request.getRecipientName(),
-                    request.getDepositAmount(), request.getTransactionTime(), request.getTotalBalance());
-            return ResponseEntity.ok().body("Deposit message successfully sent.!");
+            walletMessageProducer.sendDepositWalletNotification(
+                    request.getRecipientEmail(),
+                    request.getRecipientName(),
+                    request.getDepositAmount(),
+                    request.getTransactionTime(),
+                    request.getTotalBalance());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("message", "Deposit message successfully sent!");
+
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Failed to send Deposit message.");
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "error");
+            error.put("message", "Failed to send deposit message.");
+            return ResponseEntity.internalServerError().body(error);
         }
     }
-    
+
     
     @PostMapping("/send/debit-wallet-message")
-    public ResponseEntity<?> sendDebitWalletAlert(HttpServletRequest httpRequest,
+    public ResponseEntity<Map<String, Object>> sendDebitWalletAlert(
+            HttpServletRequest httpRequest,
             @Valid @RequestBody DebitWalletNotification request) {
         try {
-            walletMessageProducer.sendDebitWalletNotification(request.getSenderEmail(), request.getFeeAmount(), request.getTransferAmount(), request.getSenderFullName(), request.getReceiverFullName(), request.getBalance(), request.getCurrency());
-            return ResponseEntity.ok().body("Debit message successfully sent.!");
+            walletMessageProducer.sendDebitWalletNotification(
+                    request.getSenderEmail(),
+                    request.getFeeAmount(),
+                    request.getTransferAmount(),
+                    request.getSenderFullName(),
+                    request.getReceiverFullName(),
+                    request.getBalance(),
+                    request.getCurrency());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("message", "Debit message successfully sent!");
+
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Failed to send Debit message.");
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "error");
+            error.put("message", "Failed to send debit message.");
+            return ResponseEntity.internalServerError().body(error);
         }
     }
 

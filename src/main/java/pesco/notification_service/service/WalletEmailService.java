@@ -15,6 +15,7 @@ import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
+import pesco.notification_service.enums.Symbols;
 import pesco.notification_service.payloads.CreditWalletNotification;
 import pesco.notification_service.payloads.DebitWalletNotification;
 import pesco.notification_service.payloads.DepositWalletNotification;
@@ -44,7 +45,8 @@ public class WalletEmailService {
                     creditWalletNotification.getTransferAmount(),
                     creditWalletNotification.getSenderFullName(),
                     creditWalletNotification.getReceiverFullName(),
-                    creditWalletNotification.getRecipientTotalBalance());
+                    creditWalletNotification.getRecipientTotalBalance(),
+                    creditWalletNotification.getCurrency());
         } else {
             System.out.println("Failed to deserialize email request.");
         }
@@ -53,27 +55,26 @@ public class WalletEmailService {
     @Async
     public CompletableFuture<Void> sendCreditWalletNotificationToRecipient(String recipientEmail,
             BigDecimal transferAmount, String senderFullName, String receiverFullName,
-            BigDecimal RecipientTotalBalance) {
+            BigDecimal RecipientTotalBalance, String currency) {
         MimeMessage mimeMessage = javaMailSender.createMimeMessage();
         try {
+            Symbols currencySymbols = Symbols.valueOf(currency.toUpperCase());
+            String symbol = currencySymbols.getSymbol();
             // Create MimeMessageHelper
             MimeMessageHelper mimeMessageHelper = new MimeMessageHelper(mimeMessage, "utf-8");
-
             // Prepare the HTML template
             Context context = new Context();
             context.setVariable("name", receiverFullName);
             context.setVariable("senderName", senderFullName);
             context.setVariable("recipientName", receiverFullName);
-
             context.setVariable("transactionId", transactionId);
             context.setVariable("type", "CREDITED");
-            context.setVariable("amount", KeyHelper.FormatBigDecimal(transferAmount));
-            context.setVariable("description",
-                    "Credited " + KeyHelper.FormatBigDecimal(transferAmount) + " by " + senderFullName.toLowerCase());
+            context.setVariable("amount", symbol+KeyHelper.FormatBigDecimal(transferAmount));
+            context.setVariable("description","Credited " + symbol+KeyHelper.FormatBigDecimal(transferAmount) + " by " + senderFullName.toLowerCase());
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             String formattedTime = LocalDateTime.now().format(formatter);
             context.setVariable("time", formattedTime);
-            context.setVariable("totalBalance", KeyHelper.FormatBigDecimal(RecipientTotalBalance));
+            context.setVariable("totalBalance", symbol+KeyHelper.FormatBigDecimal(RecipientTotalBalance));
 
             String htmlContent = templateEngine.process("TransactionNotification", context);
 
@@ -99,7 +100,8 @@ public class WalletEmailService {
                     debitWalletNotification.getTransferAmount(),
                     debitWalletNotification.getSenderFullName(),
                     debitWalletNotification.getReceiverFullName(),
-                    debitWalletNotification.getBalance());
+                    debitWalletNotification.getBalance(),
+                    debitWalletNotification.getCurrency());
         } else {
             System.out.println("Failed to deserialize email request.");
         }
@@ -107,12 +109,16 @@ public class WalletEmailService {
 
     @Async
     public CompletableFuture<Void> sendDebitWalletNotificationToRecipient(String senderEmail, BigDecimal feeAmount,
-            BigDecimal transferAmount, String senderFullName, String receiverFullName, BigDecimal balance) {
-        MimeMessage mimeMessage = javaMailSender.createMimeMessage();
+            BigDecimal transferAmount, String senderFullName, String receiverFullName, BigDecimal balance,
+            String currency) {
+        
+                MimeMessage mimeMessage = javaMailSender.createMimeMessage();
         try {
             // Create MimeMessageHelper
             MimeMessageHelper mimeMessageHelper = new MimeMessageHelper(mimeMessage, "utf-8");
 
+            Symbols currencySymbols = Symbols.valueOf(currency.toUpperCase());
+            String symbol = currencySymbols.getSymbol();
             // Prepare the HTML template
             Context context = new Context();
             context.setVariable("name", senderFullName);
@@ -120,13 +126,13 @@ public class WalletEmailService {
             context.setVariable("senderName", senderFullName);
             context.setVariable("transactionId", transactionId);
             context.setVariable("type", "DEBITED");
-            context.setVariable("amount", KeyHelper.FormatBigDecimal(transferAmount));
-            context.setVariable("description", "Transfered " + KeyHelper.FormatBigDecimal(transferAmount) + " to "
+            context.setVariable("amount", symbol+KeyHelper.FormatBigDecimal(transferAmount));
+            context.setVariable("description", "Transfered " +symbol+ KeyHelper.FormatBigDecimal(transferAmount) + " to "
                     + receiverFullName.toLowerCase());
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             String formattedTime = LocalDateTime.now().format(formatter);
             context.setVariable("time", formattedTime);
-            context.setVariable("totalBalance", KeyHelper.FormatBigDecimal(balance));
+            context.setVariable("totalBalance", symbol + KeyHelper.FormatBigDecimal(balance));
 
             String htmlContent = templateEngine.process("TransactionNotification", context);
 

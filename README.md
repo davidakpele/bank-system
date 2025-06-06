@@ -112,7 +112,7 @@ services:
 ## 🧪 Running Tests
 ```./mvnw test```
 
-🧑‍💻 ## Contributing
+## 🧑‍💻  Contributing
  - Contributions are welcome! Please fork the repository and submit a pull request.
 
 ## 📄 License

@@ -27,6 +27,7 @@ public class CreditWalletNotification {
 
     @NotNull(message = "Recipient's total balance is required")
     private BigDecimal recipientTotalBalance;
+    
     @NotBlank(message = "Currency is mandatory")
     private String currency;
     // Default constructor
