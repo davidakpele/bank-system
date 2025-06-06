@@ -1,16 +1,21 @@
 package pesco.withdrawal_service.clients;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.ParseException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import pesco.withdrawal_service.dto.WalletDTO;
@@ -24,11 +29,14 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 @Component
 public class WalletServiceClient {
 
+    // Stores correlationId -> CompletableFuture
+    private final Map<String, CompletableFuture<BigDecimal>> pendingRequests = new ConcurrentHashMap<>();
+
     private final WebClient walletServiceWebClient;
     @SuppressWarnings("unused")
     private final ApplicationSettings settings;
     private final ObjectMapper objectMapper = new ObjectMapper();
- 
+    private WebSocketSession webSocketSession;
     private String walletSocketUrl;
 
     @Autowired
@@ -47,7 +55,7 @@ public class WalletServiceClient {
                 .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {
                 })
                 .block();
-
+                                                      
         // Extract and return the balance
         if (response != null && response.containsKey("formatted_balance")) {
             try {
@@ -57,11 +65,94 @@ public class WalletServiceClient {
                 throw new RuntimeException("Failed to parse balance: " + e.getMessage(), e);
             }
         }
-
-        throw new RuntimeException(
-                "Failed to fetch balance for userId: " + userId + " and currencyCode: " + currencyCode);
+        throw new RuntimeException("Failed to fetch balance for userId: " + userId + " and currencyCode: " + currencyCode);
     }
 
+    @SuppressWarnings("removal")
+    public CompletableFuture<BigDecimal> fetchUserBalance(Long userId, String username, String currencyType,
+            String token) {
+        String url = walletSocketUrl + "?userId=" + userId + "&token=" + token;
+        Map<String, Object> request = Map.of(
+                "type", "balance_by_currency",
+                "userId", userId,
+                "username", username,
+                "currencyType", currencyType,
+                "token", token);
+
+        CompletableFuture<BigDecimal> responseFuture = new CompletableFuture<>();
+
+        try {
+            String json = objectMapper.writeValueAsString(request);
+            StandardWebSocketClient client = new StandardWebSocketClient();
+            client.doHandshake(new TextWebSocketHandler() {
+                @Override
+                public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+                    session.sendMessage(new TextMessage(json));
+                }
+
+                @Override
+                protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+                    String payload = message.getPayload();
+              
+                    Map<String, Object> res = objectMapper.readValue(payload, new TypeReference<>() {
+                    });
+                    if (res.containsKey("wallet_balance")) {
+                        Object walletBalanceObj = res.get("wallet_balance");
+                        if (walletBalanceObj instanceof Map) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> walletBalance = (Map<String, Object>) walletBalanceObj;
+                            String balanceStr = walletBalance.get("balance").toString();
+                            BigDecimal balance = new BigDecimal(balanceStr);
+                            responseFuture.complete(balance);
+                        } else {
+                            responseFuture.completeExceptionally(
+                                    new IllegalArgumentException("Missing or invalid wallet_balance in response"));
+                        }
+                    }
+            
+                }
+                @Override
+                public void handleTransportError(WebSocketSession session, Throwable exception) {
+                    responseFuture.completeExceptionally(exception);
+                }
+
+            }, url);
+
+        } catch (Exception e) {
+            responseFuture.completeExceptionally(e);
+        }
+
+        // Optional: add timeout
+        return responseFuture.orTimeout(5, TimeUnit.SECONDS);
+    }    
+
+    public void onWebSocketMessage(String messageJson) {
+        try {
+            Map<String, Object> message = new ObjectMapper().readValue(messageJson, new TypeReference<>() {
+            });
+            if ("balance_response".equals(message.get("type"))) {
+                String correlationId = (String) message.get("correlationId");
+                CompletableFuture<BigDecimal> future = pendingRequests.remove(correlationId);
+                if (future != null) {
+                    String formatted = message.get("balance").toString();
+                    BigDecimal parsedBalance = parseFormattedString(formatted);
+                    future.complete(parsedBalance);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void sendWebSocketMessage(Map<String, Object> payload) {
+        try {
+            String jsonMessage = new ObjectMapper().writeValueAsString(payload);
+            webSocketSession.sendMessage(new TextMessage(jsonMessage));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to send WebSocket message", e);
+        }
+    }    
+    
     public static BigDecimal parseFormattedString(String formattedValue) throws ParseException {
         String pattern = "#,##0.00";
         DecimalFormatSymbols symbols = new DecimalFormatSymbols();
@@ -162,10 +253,7 @@ public class WalletServiceClient {
                 .bodyToMono(WalletDTO.class)
                 .block();
         return walletDTO;
-    }
-
-
-
+    }      
     
 }
 

@@ -3,11 +3,12 @@ package pesco.withdrawal_service.broker.domain;
 import java.io.IOException;
 import java.net.URI;
 import java.sql.Timestamp;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -32,6 +33,7 @@ import pesco.withdrawal_service.dto.WalletDTO;
 import pesco.withdrawal_service.dto.WithdrawHistoryRequestDTO;
 import pesco.withdrawal_service.enums.BanActions;
 import pesco.withdrawal_service.enums.CurrencyType;
+import pesco.withdrawal_service.enums.Symbols;
 import pesco.withdrawal_service.enums.TransactionType;
 import pesco.withdrawal_service.exceptions.UserClientNotFoundException;
 import pesco.withdrawal_service.middleware.UserTransactionsAgent;
@@ -41,8 +43,6 @@ import org.springframework.web.socket.*;
 
 @Component
 public class WithdrawalBroker extends AbstractWebSocketHandler {
-    // Define a constant for platform's revenue share
-    private static final BigDecimal PLATFORM_REVENUE_SHARE = new BigDecimal("0.80"); // 80%
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
@@ -73,6 +73,7 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
     @Autowired
     private HistoryServiceClient historyServiceClient;
 
+    @SuppressWarnings("unused")
     @Autowired
     private TransactionLogger transactionLogger;
 
@@ -194,7 +195,6 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                 if (fromUser == null)
                     return;
 
-
                 UserDTO toUser = safeFindUser(recipientUser, token, "Recipient", session);
                 if (toUser == null)
                     return;
@@ -229,7 +229,8 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                 }
 
                 // Check suspicious behavior
-                if (fromUser != null && userTransactionsAgent.isHighVolumeOrFrequentTransactions(fromUser.getId(), token)) {
+                if (fromUser != null
+                        && userTransactionsAgent.isHighVolumeOrFrequentTransactions(fromUser.getId(), token)) {
                     responseMessageObject.put("status", "error");
                     responseMessageObject.put("type", "message");
                     responseMessageObject.put("message",
@@ -256,7 +257,8 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                     return;
                 }
 
-                if (fromUser != null && userTransactionsAgent.isInconsistentBehavior(fromUser.getId(), fromUser.getId(), token)) {
+                if (fromUser != null
+                        && userTransactionsAgent.isInconsistentBehavior(fromUser.getId(), fromUser.getId(), token)) {
                     responseMessageObject.put("status", "error");
                     responseMessageObject.put("type", "message");
                     responseMessageObject.put("message",
@@ -303,7 +305,7 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                 }
 
                 WalletDTO senderWalletAccount = walletServiceClient.findByUserId(fromUser.getId(), token);
-                
+
                 if (senderWalletAccount == null) {
                     responseMessageObject.put("status", "error");
                     responseMessageObject.put("type", "message");
@@ -312,7 +314,8 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                     return;
                 }
 
-                else if (senderWalletAccount != null&& !passwordEncoder.matches(providedPin, senderWalletAccount.getPassword())) {
+                else if (senderWalletAccount != null
+                        && !passwordEncoder.matches(providedPin, senderWalletAccount.getPassword())) {
                     responseMessageObject.put("status", "error");
                     responseMessageObject.put("type", "message");
                     responseMessageObject.put("message",
@@ -322,10 +325,6 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                 }
                 // Calculate the fee amount
                 BigDecimal feeAmount = feeCalculator.calculateFee(amount);
-    
-                // Calculate the platform's revenue (80% of the fee)
-                BigDecimal revenue = feeAmount.multiply(PLATFORM_REVENUE_SHARE).setScale(2,
-                        RoundingMode.HALF_UP);
 
                 // Calculate total deduction from sender (Amount + Fee Amount)
                 BigDecimal finalDeduction = amount.add(feeAmount);
@@ -345,13 +344,13 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                         ? walletServiceClient.findByUserId(toUser.getId(), token)
                         : null;
 
-                //Handle recipient wallet creation if it doesn't exist
+                // Handle recipient wallet creation if it doesn't exist
                 if (recipientWalletAccount == null && toUser != null) {
                     CompletableFuture<Void> createNewWallet = CompletableFuture
                             .runAsync(() -> walletServiceClient.createUserWallet(toUser.getId()));
                     createNewWallet.join();
                 }
-                
+
                 /**
                  * @Run Multiple Tasks in Parallel
                  * @Run deduction and update wallet concurrently and then wait for all to complete
@@ -360,61 +359,65 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                  * 
                  *      => Action 2 (Credit recipient user wallet)
                  */
-                
+
                 // Action 1
-                    
+
                 CompletableFuture<Void> deductFromSenderWallet = walletServiceClient.DeductAmountFromSenderWallet(
-                    fromUser.getId(),
-                    fromUser.getUsername(),
-                    toUser.getUsername(),
-                    amount.toString(),
-                    finalDeduction.toString(),
-                    currencyType,
-                    senderWalletAccount.getId(), token)
-                    .thenAccept(result -> {
-                        try {
-                            synchronized (session) {
-                                session.sendMessage(new TextMessage(result));
+                        fromUser.getId(),
+                        fromUser.getUsername(),
+                        toUser.getUsername(),
+                        amount.toString(),
+                        finalDeduction.toString(),
+                        currencyType,
+                        senderWalletAccount.getId(), token)
+                        .thenAccept(result -> {
+                            try {
+                                synchronized (session) {
+                                    session.sendMessage(new TextMessage(result));
+                                }
+                            } catch (IOException e) {
+                                e.printStackTrace();
                             }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                );
-                
+                        });
+
                 // Log 
-                CompletableFuture<Void> logTransaction = CompletableFuture
-                    .runAsync(() -> {
-                        try {
-                            synchronized (session) {
-                                transactionLogger.logTransaction(payload);
-                            }
-                        } catch (JsonProcessingException e) {
-                            e.printStackTrace();
-                        }
-                    });
+                // CompletableFuture<Void> logTransaction = CompletableFuture
+                // .runAsync(() -> {
+                //     try {
+                //         synchronized (session) {
+                //             transactionLogger.logTransaction(payload);
+                //         }
+                //     } catch (JsonProcessingException e) {
+                //         e.printStackTrace();
+                //     }
+                // });
 
+                
+                Symbols currencySymbols = Symbols.valueOf(currencyType.toString());
+                String symbol = currencySymbols.getSymbol();
+                
                 //Wait for all threads to complete
-                CompletableFuture.allOf(deductFromSenderWallet, logTransaction).join();
-
+                CompletableFuture.allOf(deductFromSenderWallet).join();
+                String f_amount = formatBigDecimal(amount);
                 // Create history for both users.
                 WithdrawHistoryRequestDTO senderHistory = new WithdrawHistoryRequestDTO();
                 senderHistory.setAmount(amount.negate());
                 senderHistory.setCurrencyType(currencyType);
-                senderHistory.setDescription("Transfer " + senderWalletAccount.getBalances().get(0).getCurrencySymbol().toString()+ amount + " to " + toUser.getUsername());
+                senderHistory.setDescription("Transfered " + symbol + f_amount + " to " + toUser.getUsername());
                 senderHistory.setType(TransactionType.DEBITED);
                 senderHistory.setRecipientUsername(toUser.getUsername());
                 senderHistory.setUserId(fromUser.getId());
                 senderHistory.setSenderUsername(fromUser.getUsername());
                 senderHistory.setWalletId(senderWalletAccount.getId());
 
-                CompletableFuture<Void>CreateSenderHistory = CompletableFuture.runAsync(() -> historyServiceClient.createUserCreditHistory(senderHistory, token));
+                CompletableFuture<Void> CreateSenderHistory = CompletableFuture
+                        .runAsync(() -> historyServiceClient.createUserCreditHistory(senderHistory, token));
                 CreateSenderHistory.join();
 
                 WithdrawHistoryRequestDTO recipientHistory = new WithdrawHistoryRequestDTO();
                 recipientHistory.setAmount(amount);
                 recipientHistory.setCurrencyType(currencyType);
-                recipientHistory.setDescription("Credited " + senderWalletAccount.getBalances().get(0).getCurrencySymbol().toString()+ amount + " by " + fromUser.getUsername());
+                recipientHistory.setDescription("Credited " + symbol+ f_amount+ " by " + fromUser.getUsername());
                 recipientHistory.setType(TransactionType.CREDITED);
                 recipientHistory.setRecipientUsername(toUser.getUsername());
                 recipientHistory.setUserId(toUser.getId());
@@ -425,44 +428,92 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
                         .runAsync(() -> historyServiceClient.createUserCreditHistory(recipientHistory, token));
                 CreateRecipientHistory.join();
 
-                CompletableFuture<Void> addToPlatformRevenue =revenueServiceClient.addToPlatformRevenue(feeAmount, currencyType, token)
-                    .thenAccept(result -> {
-                        try {
-                            synchronized (session) {
-                                session.sendMessage(new TextMessage(result));
+                String revenueAmount = feeAmount.toString();
+                CompletableFuture<Void> addToPlatformRevenue = revenueServiceClient
+                        .addToPlatformRevenue(fromUser.getId(), revenueAmount, currencyType, token)
+                        .thenAccept(result -> {
+                            try {
+                                synchronized (session) {
+                                    session.sendMessage(new TextMessage(result));
+                                }
+                            } catch (IOException e) {
+                                e.printStackTrace();
                             }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                );
+                        });
 
                 CompletableFuture.allOf(addToPlatformRevenue).join();
-                
 
-                // BigDecimal senderNewWalletBalance = walletServiceClient.FetchUserBalance(fromUser.getId(),
-                //         currencyType.toString(), token);
+                CompletableFuture<BigDecimal> senderNewWalletBalance = walletServiceClient.fetchUserBalance(
+                        fromUser.getId(), username, currencyType.toString(), token);
 
-                // CompletableFuture<Void> sendDebitAlert = CompletableFuture.runAsync(() -> notificationServiceClient.sendDebitAlert(fromUser.getEmail(),
-                //                 fromUser.getUsername(), toUser.getUsername(), amount, currencyType.toString(),
-                //                 feeAmount, senderNewWalletBalance));
-                // sendDebitAlert.join();
+                CompletableFuture<Void> sendDebitAlert = senderNewWalletBalance.thenAccept(latestBalance -> {
+                    notificationServiceClient.sendDebitAlert(
+                            fromUser.getEmail(),
+                            fromUser.getUsername(),
+                            toUser.getRecords().get(0).getFirstName()+" "+toUser.getRecords().get(0).getLastName(),
+                            amount,
+                            currencyType.toString(),
+                            feeAmount,
+                            latestBalance);
+                });
 
-                // BigDecimal recieverNewWalletBalance = walletServiceClient.FetchUserBalance(toUser.getId(),
-                //         currencyType.toString(), token);
+                CompletableFuture<BigDecimal> recieverNewWalletBalance = walletServiceClient.fetchUserBalance(
+                        toUser.getId(), toUser.getUsername(), currencyType.toString(), token);
 
-                // CompletableFuture<Void> sendCreditAlert = CompletableFuture.runAsync(
-                //         () -> notificationServiceClient.sendCreditAlert(fromUser.getUsername(), toUser.getEmail(),
-                //                 toUser.getUsername(), amount, currencyType.toString(), recieverNewWalletBalance));
-                // sendCreditAlert.join();
+                CompletableFuture<Void> sendCreditAlert = recieverNewWalletBalance.thenAccept(latestBalance -> {
+                    notificationServiceClient.sendCreditAlert(
+                            fromUser.getUsername(),
+                            toUser.getEmail(),
+                            toUser.getUsername(),
+                            amount,
+                            currencyType.toString(),
+                            latestBalance);
+                });
+
+                CompletableFuture.allOf(sendDebitAlert, sendCreditAlert).join();
 
                 responseMessageObject.put("status", "success");
-                responseMessageObject.put("type", "message");
-                responseMessageObject.put("message", "Transaction successful\n\n" + amount
-                        + " has been successfully sent to " + recipientUser + ".");
+                responseMessageObject.put("type", "withdraw-message");
+                responseMessageObject.put("message", "Transaction successful " + symbol+ f_amount+ " has been successfully sent to " + recipientUser + ".");
                 sendMessage(session, responseMessageObject);
-
+                return;
             }
+            
+            if (type.equals("balance_view")) {
+                String currencyTypeStr = (String) payload.get("currencyType");
+                String username = (String) payload.get("username");
+                CurrencyType currencyType = CurrencyType.valueOf(currencyTypeStr.toUpperCase());
+                Long userId = 1001L;
+
+                walletServiceClient.fetchUserBalance(userId, username, currencyType.toString(), token)
+                        .thenAccept(balance -> {
+                            System.out.println(balance);
+                            Map<String, Object> response = new HashMap<>();
+                            response.put("status", "success");
+                            response.put("type", "message");
+                            response.put("message", balance.toPlainString()); 
+                            try {
+                                sendMessage(session, response);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        })
+                        .exceptionally(ex -> {
+                            Map<String, Object> error = new HashMap<>();
+                            error.put("status", "error");
+                            error.put("type", "message");
+                            error.put("message", "Failed to fetch balance: " + ex.getMessage());
+                            try {
+                                sendMessage(session, error);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            return null;
+                        });
+
+                return;
+            }                     
+            
         } catch (Exception e) {
             sendErrorAndClose(session, "Error", "Invalid message format");
         }
@@ -557,4 +608,12 @@ public class WithdrawalBroker extends AbstractWebSocketHandler {
         }
     }
 
+     public String formatBigDecimal(BigDecimal amount) {
+        String pattern = "#,##0.00";
+        DecimalFormatSymbols symbols = new DecimalFormatSymbols();
+        symbols.setGroupingSeparator(',');
+        symbols.setDecimalSeparator('.');
+        DecimalFormat decimalFormat = new DecimalFormat(pattern, symbols);
+        return decimalFormat.format(amount);
+    }
 }

@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import reactor.core.publisher.Mono;
+
 @Service
 public class NotificationServiceClient {
  
@@ -17,12 +19,8 @@ public class NotificationServiceClient {
         this.notificationServiceWebClient = notificationServiceWebClient;
     }
 
-    public Object sendDebitAlert(String senderEmail, String senderUsername, 
-                                           String recipientUsername, 
-                                           BigDecimal amount, String currency, 
-                                           BigDecimal feeAmount, BigDecimal senderNewWalletBalance) {
+   public boolean sendDebitAlert(String senderEmail, String senderUsername, String recipientUsername, BigDecimal amount, String currency, BigDecimal feeAmount, BigDecimal senderNewWalletBalance) {
         try {
-            // Create the request body 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("senderEmail", senderEmail);
             requestBody.put("senderFullName", senderUsername);
@@ -32,21 +30,28 @@ public class NotificationServiceClient {
             requestBody.put("feeAmount", feeAmount);
             requestBody.put("balance", senderNewWalletBalance);
 
-            // Send the POST request
-            return notificationServiceWebClient.post()
-                    .uri("/send/debit-wallet-message") 
-                    .bodyValue(requestBody) 
-                    .retrieve()
-                    .bodyToMono(Object.class) 
-                    .block(); 
+            notificationServiceWebClient.post()
+                    .uri("/send/debit-wallet-message")
+                    .bodyValue(requestBody)
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            return Mono.just(true);
+                        } else {
+                            return Mono.just(false);
+                        }
+                    })
+                    .block();
+
+            return true;
+
         } catch (Exception ex) {
-            // Handle exceptions
             System.err.println("Error sending transaction notifications: " + ex.getMessage());
-            return null; 
+            return false;
         }
     }
 
-    public Object sendCreditAlert(String username, String email, String recipientUsername, BigDecimal amount, String currency, BigDecimal recieverNewWalletBalance) {
+
+    public boolean sendCreditAlert(String username, String email, String recipientUsername, BigDecimal amount, String currency, BigDecimal recieverNewWalletBalance) {
         try {
             // Create the request body
             Map<String, Object> requestBody = new HashMap<>();
@@ -56,18 +61,23 @@ public class NotificationServiceClient {
             requestBody.put("transferAmount", amount);
             requestBody.put("currency", currency);
             requestBody.put("recipientTotalBalance", recieverNewWalletBalance);
-
-            // Send the POST request
-            return notificationServiceWebClient.post()
+            notificationServiceWebClient.post()
                     .uri("/send/credit-wallet-message")
                     .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(Object.class)
+                    .exchangeToMono(response -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            return Mono.just(true);
+                        } else {
+                            return Mono.just(false);
+                        }
+                    })
                     .block();
+
+            return true;
         } catch (Exception ex) {
             // Handle exceptions
             System.err.println("Error sending transaction notifications: " + ex.getMessage());
-            return null;
+            return false;
         }
     }
     

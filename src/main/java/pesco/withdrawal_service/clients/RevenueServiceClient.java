@@ -1,6 +1,5 @@
 package pesco.withdrawal_service.clients;
 
-import java.math.BigDecimal;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +16,7 @@ import pesco.withdrawal_service.utils.ApplicationSettings;
 @Service
 public class RevenueServiceClient {
 
+    @SuppressWarnings("unused")
     private final WebClient revenueServiceWebClient;
     @SuppressWarnings("unused")
     private final ApplicationSettings settings;
@@ -31,20 +31,18 @@ public class RevenueServiceClient {
         this.revenueSocketUrl = applicationSettings.getRevenueWebSocketUrl();
     }
 
-    public CompletableFuture<String> addToPlatformRevenue(BigDecimal feeAmount, CurrencyType currencyType, String token) {
+    public CompletableFuture<String> addToPlatformRevenue(Long userId, String feeAmount, CurrencyType currencyType, String token) {
         Map<String, Object> message = Map.of(
                 "type", "add_revenue",
                 "amount", feeAmount,
                 "currencyType", currencyType,
                 "token", token);
-        System.out.println(message);
-        return sendMessageToRevenueService(message, token);
+        return sendMessageToRevenueService(message, userId, token);
     }
 
     @SuppressWarnings("removal")
-    private CompletableFuture<String> sendMessageToRevenueService(Map<String, Object> message, String token) {
-        String url = revenueSocketUrl + "?token=" + token;
-        System.out.println(url);
+    private CompletableFuture<String> sendMessageToRevenueService(Map<String, Object> message, Long userId, String token) {
+        String url = revenueSocketUrl + "/user/?userId=" + userId + "&token=" + token;
         CompletableFuture<String> responseFuture = new CompletableFuture<>();
 
         try {

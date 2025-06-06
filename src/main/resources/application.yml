@@ -33,7 +33,7 @@ wallet-websocket:
   url: ws://localhost:8081/ws/wallet
 
 notification-service:
-  base-url: http://localhost:8070
+  base-url: http://localhost:8079
 
 banklist-service:
   base-url: http://localhost:8040
