@@ -18,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import pesco.wallet_service.clients.HistoryClient;
@@ -409,15 +408,13 @@ public class WalletServiceImplementations implements WalletService {
                         .build())
                 .collect(Collectors.toList());
 
-        Long transactionCount = historyClient.getTransactionCount(user.getId(), token);
-        String historyLabel = transactionCount > 1 ? transactionCount + " times"
-                : transactionCount == 0 ? "No history" : "once";
 
         boolean hasPin = user.getRecords().get(0).isTransferPinSet();
 
         return WalletSection.builder()
                 .wallet_balances(balances)
                 .walletId(wallet.getId())
+                .hasTransferPin(hasPin)
                 .build();
     }
 

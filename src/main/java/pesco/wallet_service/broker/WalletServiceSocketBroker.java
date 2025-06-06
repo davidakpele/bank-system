@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,59 +97,44 @@ public class WalletServiceSocketBroker extends AbstractWebSocketHandler {
 
         String extractedUserId = jwtTokenProvider.getUserIdFromJWT(token);
 
-        if (!String.valueOf(userId).equals(String.valueOf(extractedUserId))) {
-            sendErrorAndClose(session, "Unauthorized", "User ID mismatch");
-            return;
-        }
-
         String redisKey = "user_session:" + userId;
 
-        //  Check if session already exists
-        // if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
-        //     // Session already exists — fetch and return it
-      
-        //     Map<String, Object> responsePayload = new LinkedHashMap<>();
-        //     responsePayload.put("status", "success");
-        //     responsePayload.put("type", "session");
-        //     responsePayload.put("message", "Session already exists");
-
-        //     sendMessage(session, responsePayload);
-        //     return;
-        // }
-
-        // Build new session if not found
-        UserDTO user = userServiceClient.findById(userId, token);
-        HistorySection history = historyClient.buildUserHistory(userId, token);
-
-        UserSessionData sessionData = UserSessionData.builder()
-                .data(DataSection.builder()
-                        .session_date(Instant.now().toString())
-                        .sessionId(UUID.randomUUID().toString())
-                        .userDetails(user)
-                        .build())
-                .wallet(walletServiceImplementations.buildWalletSection(user, token))
-                .history(history)
-                .encrypted_signature(sec46.data_encryption(userId))
-                .build();
-
-        String sessionJson = objectMapper.writeValueAsString(sessionData);
-        redisTemplate.opsForValue().set(redisKey, sessionJson);
-
-        // Also store walletId → userId if needed
-        Long walletId = sessionData.getWallet().getWalletId();
-        String walletKey = "wallet_to_user:" + walletId;
-
-        redisTemplate.opsForValue().set(walletKey, String.valueOf(userId));
-
         Map<String, Object> responsePayload = new LinkedHashMap<>();
-        responsePayload.put("status", "success");
-        responsePayload.put("type", "message");
-        responsePayload.put("message", "Connection established and user session initialized");
-        responsePayload.put("data", sessionData);
 
+        if (String.valueOf(userId).equals(String.valueOf(extractedUserId))) {
+            // Build new session if not found
+            UserDTO user = userServiceClient.findById(userId, token);
+            HistorySection history = historyClient.buildUserHistory(userId, token);
+
+            UserSessionData sessionData = UserSessionData.builder()
+                    .data(DataSection.builder()
+                            .session_date(Instant.now().toString())
+                            .sessionId(UUID.randomUUID().toString())
+                            .userDetails(user)
+                            .build())
+                    .wallet(walletServiceImplementations.buildWalletSection(user, token))
+                    .history(history)
+                    .encrypted_signature(sec46.data_encryption(userId))
+                    .build();
+
+            String sessionJson = objectMapper.writeValueAsString(sessionData);
+            redisTemplate.opsForValue().set(redisKey, sessionJson);
+
+            // Also store walletId → userId if needed
+            Long walletId = sessionData.getWallet().getWalletId();
+            String walletKey = "wallet_to_user:" + walletId;
+
+            redisTemplate.opsForValue().set(walletKey, String.valueOf(userId));
+
+            responsePayload.put("status", "success");
+            responsePayload.put("type", "message");
+            responsePayload.put("message", "Connection established and user session initialized");
+            responsePayload.put("data", sessionData);
+        }
         sendMessage(session, responsePayload);
-    }    
+    }
 
+    @SuppressWarnings("deprecation")
     @Override 
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         try {
@@ -163,7 +150,7 @@ public class WalletServiceSocketBroker extends AbstractWebSocketHandler {
 
             // JWT validation                 
             if (token == null || token.isEmpty()) {
-                sendErrorAndClose(session, "JWT token is missing", "Authentication required");
+                sendErrorAndClose(session, "JWT token is missing", "Authentication required from request.");
                 return;
             }
 
@@ -172,13 +159,78 @@ public class WalletServiceSocketBroker extends AbstractWebSocketHandler {
                 return;
             }
             
-            if (type.isEmpty() || type ==null) {
+            if (type.isEmpty() || type == null) {
                 responseMessageObject.put("status", "error");
                 responseMessageObject.put("type", "message");
                 responseMessageObject.put("message", "Missing Type param..! Type parameter must be provided.");
                 sendMessage(session, responseMessageObject);
             }
+            
+            if (type.equals("balance_by_currency")) {
+                // Build the response
+                Map<String, Object> response = new HashMap<>();
 
+                String username = (String) payload.get("username");
+                String currency = (String) payload.get("currencyType");
+
+                if (!Arrays.stream(CurrencyType.values())
+                        .anyMatch(ct -> ct.name().equals(currency.toString().toUpperCase()))) {
+                    response.put("status", "error");
+                    response.put("message", "Invalid Currency provided.*");
+                    response.put("details",
+                            "Please provide Currency type. any of this list (USD, EUR, NGN,GBP, JPY,AUD,CAD, CHF, CNY, OR INR)");
+                    sendMessage(session, response);
+                    return;
+                }
+
+                CurrencyType currencyType = CurrencyType.valueOf(currency.toString().toUpperCase());
+                // Fetch user details
+                UserDTO user = userServiceClient.findByUsername(username, token);
+
+                if (user == null) {
+                    response.put("error", "User not found");
+                    response.put("details", "User not found: No user data returned for username " + username);
+                    sendMessage(session, response);
+                    return;
+                }
+
+                Optional<Wallet> walletOpt = walletRepository.findWalletByUserIdAndCurrencyCode(user.getId(), currencyType.name());
+
+                if (walletOpt.isEmpty()) {
+                    response.put("error", "Wallet or currency not found for user ID.");
+                    response.put("details", "Wallet or currency not found for user ID " + user.getId() + " and currency " + currency);
+                    sendMessage(session, response);
+                    return;
+                }
+
+                Wallet wallet = walletOpt.get();
+
+                // Find the specific currency balance
+                CurrencyBalance currencyBalance = wallet.getBalances()
+                        .stream()
+                        .filter(balance -> balance.getCurrencyCode().equals(currencyType.name()))
+                        .findFirst()
+                        .orElseThrow(() -> new RuntimeException("Currency not found in wallet"));
+
+                BigDecimal balance = currencyBalance.getBalance().setScale(2, BigDecimal.ROUND_HALF_UP);
+
+                // Format balance
+                String formattedBalance = FormatBigDecimal(balance);
+                // Build response
+                Map<String, Object> walletBalance = new HashMap<>();
+                walletBalance.put("id", user.getId());
+                walletBalance.put("currency", currencyType);
+                walletBalance.put("balance", balance);
+                walletBalance.put("wallet", formattedBalance);
+                walletBalance.put("symbol", currencyBalance.getCurrencySymbol());
+
+                Map<String, Object> response_wallet = new HashMap<>();
+                response_wallet.put("wallet_balance", walletBalance);
+
+                sendMessage(session, response_wallet);
+                return;
+            }
+            
             if (type.equals("get_balance")) {
                 String username = (String) payload.get("username");
                 // Fetch user details
@@ -233,9 +285,7 @@ public class WalletServiceSocketBroker extends AbstractWebSocketHandler {
                 BigDecimal finalDeduction = new BigDecimal(((String) payload.get("finalDeduction")).replace(",", "."));
                 
                 CurrencyType currencyType = CurrencyType.valueOf(currency.toUpperCase());
-             
-             
-            
+                
                 UserDTO recipientUserDto = userServiceClient.findByUsername(recipientUser, token);
                 if (recipientUserDto == null) {
                     sendErrorAndClose(session, "Recipient User not found.!",
@@ -432,20 +482,25 @@ public class WalletServiceSocketBroker extends AbstractWebSocketHandler {
     }
 
     public static String FormatBigDecimal(BigDecimal amount) {
-        return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
-    }   
-    
-    private BigDecimal convertToBigDecimal(Object value) {
-        if (value instanceof BigDecimal) {
-            return (BigDecimal) value;
-        } else if (value instanceof Number) {
-            return BigDecimal.valueOf(((Number) value).doubleValue());
-        } else if (value instanceof String) {
-            return new BigDecimal(((String) value).replace(",", "."));
-        } else {
-            throw new IllegalArgumentException("Invalid value for BigDecimal: " + value);
-        }
+        String pattern = "#,##0.00";
+        DecimalFormatSymbols symbols = new DecimalFormatSymbols();
+        symbols.setGroupingSeparator(',');
+        symbols.setDecimalSeparator('.');
+        DecimalFormat decimalFormat = new DecimalFormat(pattern, symbols);
+        return decimalFormat.format(amount);
     }
+    
+    // private BigDecimal convertToBigDecimal(Object value) {
+    //     if (value instanceof BigDecimal) {
+    //         return (BigDecimal) value;
+    //     } else if (value instanceof Number) {
+    //         return BigDecimal.valueOf(((Number) value).doubleValue());
+    //     } else if (value instanceof String) {
+    //         return new BigDecimal(((String) value).replace(",", "."));
+    //     } else {
+    //         throw new IllegalArgumentException("Invalid value for BigDecimal: " + value);
+    //     }
+    // }
 
 }
 

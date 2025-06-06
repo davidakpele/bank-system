@@ -13,4 +13,5 @@ import lombok.NoArgsConstructor;
 public class WalletSection {
     private List<WalletBalanceDTO> wallet_balances;
     private Long walletId;
+    private boolean hasTransferPin;
 }
